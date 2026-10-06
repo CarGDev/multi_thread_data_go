@@ -1,7 +1,11 @@
 // Package location provides location-related types and functionality
 package location
 
-import "math"
+import (
+	"fmt"
+	"math"
+	"sync"
+)
 
 const earthRadiusKm = 6371.0
 
@@ -12,17 +16,22 @@ type Location struct {
 	Address    string
 }
 
-var locations []Location
+var (
+	locations   []*Location
+	locationsMu sync.Mutex
+)
 
 func NewLocation(
 	latitude float64,
 	longitude float64,
 	address string,
 ) *Location {
+	locationsMu.Lock()
+	defer locationsMu.Unlock()
 
 	// For now create a new location every time, regardless if the address exist
 	id := len(locations) + 1
-	location := Location{
+	location := &Location{
 		LocationID: id,
 		Latitude:   latitude,
 		Longitude:  longitude,
@@ -31,7 +40,7 @@ func NewLocation(
 
 	locations = append(locations, location)
 
-	return &location
+	return location
 }
 
 // DistanceTo returns the great-circle distance in kilometers (haversine).
@@ -47,11 +56,21 @@ func (l *Location) DistanceTo(other *Location) float64 {
 	return earthRadiusKm * 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
 }
 
+// Equals reports whether both locations share the same coordinates.
+func (l *Location) Equals(other *Location) bool {
+	return l.Latitude == other.Latitude && l.Longitude == other.Longitude
+}
+
+func (l *Location) String() string {
+	return fmt.Sprintf("%s (%.5f, %.5f)", l.Address, l.Latitude, l.Longitude)
+}
+
 func GetLocation(id int) *Location {
-	for i := range locations {
-		if locations[i].LocationID == id {
-			return &locations[i]
-		}
+	locationsMu.Lock()
+	defer locationsMu.Unlock()
+
+	if id < 1 || id > len(locations) {
+		return nil
 	}
-	return nil
+	return locations[id-1]
 }

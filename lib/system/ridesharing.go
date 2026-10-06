@@ -40,6 +40,44 @@ func (s *RideSharingSystem) SubmitTask(t task.Task) error {
 	return nil
 }
 
+// SubmitTasks enqueues every task and returns the first error, if any.
+func (s *RideSharingSystem) SubmitTasks(tasks []task.Task) error {
+	for _, t := range tasks {
+		if err := s.SubmitTask(t); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type Stats struct {
+	Total   int
+	Success int
+	Failed  int
+}
+
+func (s *RideSharingSystem) Stats() Stats {
+	return Stats{
+		Total:   s.resultStore.Count(),
+		Success: s.resultStore.CountSuccess(),
+		Failed:  s.resultStore.CountFailed(),
+	}
+}
+
+// Run starts the workers, processes all tasks, waits for completion and
+// writes the results to outPath.
+func (s *RideSharingSystem) Run(tasks []task.Task, outPath string) error {
+	s.StartWorkers()
+	if err := s.SubmitTasks(tasks); err != nil {
+		s.Shutdown()
+		s.AwaitCompletion()
+		return err
+	}
+	s.Shutdown()
+	s.AwaitCompletion()
+	return s.WriteResults(outPath)
+}
+
 func (s *RideSharingSystem) StartWorkers() {
 	if s.running {
 		return

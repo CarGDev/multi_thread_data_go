@@ -12,21 +12,41 @@ classDiagram
         -Logger logger
         -Worker[] workers
         -bool running
-        +initialize(workerCount)
+        +initialize(workerCount) RideSharingSystem
         +submitTask(task)
+        +submitTasks(tasks)
         +startWorkers()
         +shutdown()
         +awaitCompletion()
+        +getResults() Result[]
+        +writeResults(path)
+        +stats() Stats
+        +run(tasks, outPath)
+    }
+
+    class Stats {
+        +int total
+        +int success
+        +int failed
     }
 
     class Task {
-        <<abstract>>
-        -int taskId
-        -TaskStatus status
-        -DateTime createdAt
+        <<interface>>
         +process() Result
         +getId() int
         +getStatus() TaskStatus
+    }
+
+    class Base {
+        -int taskId
+        -TaskStatus status
+        -DateTime createdAt
+        -Mutex lock
+        +init(taskId)
+        +getId() int
+        +getStatus() TaskStatus
+        +setStatus(status)
+        +getCreatedAt() DateTime
     }
 
     class RideRequest {
@@ -36,6 +56,14 @@ classDiagram
         +process() Result
         +findDriver() Driver
         +calculateFare() double
+        +getRider() Rider
+        +getPickup() Location
+        +getDestination() Location
+    }
+
+    class Simulation {
+        <<package>>
+        generator.go (to implement)
     }
 
     class TaskQueue {
@@ -45,6 +73,8 @@ classDiagram
         -bool closed
         +enqueue(task)
         +dequeue() Task
+        +tryDequeue() Task, bool
+        +size() int
         +isEmpty() bool
         +close()
         +isClosed() bool
@@ -60,6 +90,8 @@ classDiagram
         +run()
         +processTask(task)
         +stop()
+        +getId() int
+        +isRunning() bool
     }
 
     class Result {
@@ -69,6 +101,8 @@ classDiagram
         -DateTime completedAt
         +getTaskId() int
         +isSuccess() bool
+        +getMessage() string
+        +getCompletedAt() DateTime
     }
 
     class ResultStore {
@@ -76,15 +110,25 @@ classDiagram
         -Mutex lock
         +addResult(result)
         +getResults() List~Result~
+        +count() int
+        +countSuccess() int
+        +countFailed() int
         +writeToFile(path)
     }
 
     class Logger {
         -Mutex lock
+        -File file
+        +newFileLogger(path) Logger
+        +close()
         +info(message)
+        +warn(message)
         +error(message)
         +logWorkerStart(workerId)
         +logWorkerComplete(workerId)
+        +logTaskStart(workerId, taskId)
+        +logTaskComplete(workerId, taskId)
+        +logTaskError(workerId, taskId, message)
         +logException(workerId, exception)
     }
 
@@ -103,8 +147,12 @@ classDiagram
         -string name
         -Location currentLocation
         -DriverStatus status
+        +acquireAvailable() Driver
+        +getAll() Driver[]
         +acceptRide() bool
         +completeRide()
+        +goOffline() bool
+        +goOnline()
         +getID() int
         +getName() string
         +getLocation() Location
@@ -117,6 +165,8 @@ classDiagram
         -double longitude
         -string address
         +distanceTo(location) double
+        +equals(location) bool
+        +toString() string
     }
 
     class TaskStatus {
@@ -150,13 +200,22 @@ classDiagram
         +getMessage() string
     }
 
+    class ErrorHelpers {
+        <<functions>>
+        +isProcessingError(err) bool
+        +isQueueError(err) bool
+        +isFileIOError(err) bool
+    }
+
     RideSharingSystem *-- TaskQueue : owns
     RideSharingSystem *-- ResultStore : owns
     RideSharingSystem *-- Logger : owns
     RideSharingSystem *-- Worker : manages
 
-    Task <|-- RideRequest
-    Task --> TaskStatus : has
+    RideSharingSystem ..> Stats : returns
+    Task <|.. RideRequest : implements
+    Base <|-- RideRequest : embedded in
+    Base --> TaskStatus : has
 
     TaskQueue o-- Task : stores
     Worker --> TaskQueue : retrieves tasks

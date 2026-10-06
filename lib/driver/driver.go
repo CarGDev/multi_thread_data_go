@@ -41,6 +41,14 @@ func NewDriver(
 	return &driver
 }
 
+// GetAll returns a copy of the driver registry.
+func GetAll() []*Driver {
+	driversMu.Lock()
+	defer driversMu.Unlock()
+
+	return append([]*Driver(nil), drivers...)
+}
+
 func (d *Driver) UpdateLocation(
 	latitude float64,
 	longitude float64,
@@ -48,16 +56,14 @@ func (d *Driver) UpdateLocation(
 ) {
 	loc := location.NewLocation(latitude, longitude, address)
 
+	driversMu.Lock()
+	defer driversMu.Unlock()
 	d.currentLocation = loc.LocationID
 }
 
 // AcquireAvailable atomically reserves the first available driver, or returns nil.
 func AcquireAvailable() *Driver {
-	driversMu.Lock()
-	snapshot := append([]*Driver(nil), drivers...)
-	driversMu.Unlock()
-
-	for _, d := range snapshot {
+	for _, d := range GetAll() {
 		if d.AcceptRide() {
 			return d
 		}
@@ -85,6 +91,25 @@ func (d *Driver) CompleteRide() {
 	d.status = Available
 }
 
+// GoOffline makes an available driver unavailable; a busy driver is left alone.
+func (d *Driver) GoOffline() bool {
+	driversMu.Lock()
+	defer driversMu.Unlock()
+	if d.status != Available {
+		return false
+	}
+	d.status = Offline
+	return true
+}
+
+func (d *Driver) GoOnline() {
+	driversMu.Lock()
+	defer driversMu.Unlock()
+	if d.status == Offline {
+		d.status = Available
+	}
+}
+
 func (d *Driver) GetID() int {
 	return d.driverID
 }
@@ -94,9 +119,16 @@ func (d *Driver) GetName() string {
 }
 
 func (d *Driver) GetLocation() *location.Location {
-	return location.GetLocation(d.currentLocation)
+	driversMu.Lock()
+	id := d.currentLocation
+	driversMu.Unlock()
+
+	return location.GetLocation(id)
 }
 
 func (d *Driver) GetStatus() DriverStatus {
+	driversMu.Lock()
+	defer driversMu.Unlock()
+
 	return d.status
 }

@@ -1,7 +1,10 @@
 // Package rider provides rider-related types and functionality
 package rider
 
-import "ridesharing/lib/location"
+import (
+	"ridesharing/lib/location"
+	"sync"
+)
 
 type Rider struct {
 	riderID         int
@@ -9,7 +12,10 @@ type Rider struct {
 	currentLocation int
 }
 
-var riders []Rider
+var (
+	riders   []*Rider
+	ridersMu sync.Mutex
+)
 
 func NewRider(
 	riderID int,
@@ -19,15 +25,24 @@ func NewRider(
 	address string,
 ) *Rider {
 	loc := location.NewLocation(latitude, longitude, address)
-	rider := Rider{
+	rider := &Rider{
 		riderID:         riderID,
 		name:            name,
 		currentLocation: loc.LocationID,
 	}
 
+	ridersMu.Lock()
 	riders = append(riders, rider)
-	return &rider
+	ridersMu.Unlock()
+	return rider
 
+}
+
+func GetAll() []*Rider {
+	ridersMu.Lock()
+	defer ridersMu.Unlock()
+
+	return append([]*Rider(nil), riders...)
 }
 
 func (d *Rider) UpdateLocation(
@@ -37,6 +52,8 @@ func (d *Rider) UpdateLocation(
 ) {
 	loc := location.NewLocation(latitude, longitude, address)
 
+	ridersMu.Lock()
+	defer ridersMu.Unlock()
 	d.currentLocation = loc.LocationID
 }
 
@@ -49,5 +66,9 @@ func (d *Rider) GetName() string {
 }
 
 func (d *Rider) GetLocation() *location.Location {
-	return location.GetLocation(d.currentLocation)
+	ridersMu.Lock()
+	id := d.currentLocation
+	ridersMu.Unlock()
+
+	return location.GetLocation(id)
 }

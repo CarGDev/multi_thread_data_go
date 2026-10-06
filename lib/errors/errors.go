@@ -1,7 +1,25 @@
 // Package errors provides the custom error types used by the ride sharing system.
 package errors
 
-import "fmt"
+import (
+	stderrors "errors"
+	"fmt"
+)
+
+func IsProcessingError(err error) bool {
+	var target *ProcessingError
+	return stderrors.As(err, &target)
+}
+
+func IsQueueError(err error) bool {
+	var target *QueueError
+	return stderrors.As(err, &target)
+}
+
+func IsFileIOError(err error) bool {
+	var target *FileIOError
+	return stderrors.As(err, &target)
+}
 
 // ProcessingError is raised when a task fails while being processed.
 type ProcessingError struct {

@@ -8,15 +8,15 @@ const (
 	Offline
 )
 
+var statusNames = map[DriverStatus]string{
+	Available: "available",
+	Busy:      "busy",
+	Offline:   "offline",
+}
+
 func (s DriverStatus) String() string {
-	switch s {
-	case Available:
-		return "available"
-	case Busy:
-		return "busy"
-	case Offline:
-		return "offline"
-	default:
-		return "available"
+	if name, ok := statusNames[s]; ok {
+		return name
 	}
+	return statusNames[Available]
 }

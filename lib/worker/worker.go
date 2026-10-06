@@ -59,6 +59,8 @@ func (w *Worker) Run() {
 }
 
 func (w *Worker) ProcessTask(t task.Task) {
+	w.logger.LogTaskStart(w.workerID, t.GetID())
+
 	defer func() {
 		if r := recover(); r != nil {
 			err := errors.NewProcessingError(t.GetID(), fmt.Sprint(r))
@@ -67,9 +69,24 @@ func (w *Worker) ProcessTask(t task.Task) {
 		}
 	}()
 
-	w.resultStore.AddResult(t.Process())
+	res := t.Process()
+	w.resultStore.AddResult(res)
+
+	if res.IsSuccess() {
+		w.logger.LogTaskComplete(w.workerID, t.GetID())
+	} else {
+		w.logger.LogTaskError(w.workerID, t.GetID(), res.GetMessage())
+	}
 }
 
 func (w *Worker) Stop() {
 	w.running.Store(false)
+}
+
+func (w *Worker) GetID() int {
+	return w.workerID
+}
+
+func (w *Worker) IsRunning() bool {
+	return w.running.Load()
 }

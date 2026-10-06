@@ -2,6 +2,7 @@
 package task
 
 import (
+	"sync"
 	"time"
 
 	"ridesharing/lib/result"
@@ -14,15 +15,19 @@ type Task interface {
 	GetStatus() TaskStatus
 }
 
-// Base holds the fields shared by every task; embed it in concrete tasks.
+// Base holds the fields shared by every task; embed it in concrete tasks and
+// call Init before use. It contains a mutex, so it must not be copied.
 type Base struct {
 	taskID    int
 	status    TaskStatus
 	createdAt time.Time
+	lock      sync.Mutex
 }
 
-func NewBase(taskID int) Base {
-	return Base{taskID: taskID, status: Pending, createdAt: time.Now()}
+func (b *Base) Init(taskID int) {
+	b.taskID = taskID
+	b.status = Pending
+	b.createdAt = time.Now()
 }
 
 func (b *Base) GetID() int {
@@ -30,7 +35,17 @@ func (b *Base) GetID() int {
 }
 
 func (b *Base) GetStatus() TaskStatus {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
 	return b.status
+}
+
+func (b *Base) SetStatus(s TaskStatus) {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
+	b.status = s
 }
 
 func (b *Base) GetCreatedAt() time.Time {

@@ -3,7 +3,6 @@ package result
 import (
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -34,15 +33,43 @@ func (s *ResultStore) GetResults() []*Result {
 	return append([]*Result(nil), s.results...)
 }
 
-func (s *ResultStore) WriteToFile(path string) error {
-	var sb strings.Builder
-	for _, r := range s.GetResults() {
-		fmt.Fprintf(&sb, "task=%d success=%t completedAt=%s message=%s\n",
-			r.taskID, r.success, r.completedAt.Format(time.RFC3339), r.message)
-	}
+func (s *ResultStore) Count() int {
+	s.lock.Lock()
+	defer s.lock.Unlock()
 
-	if err := os.WriteFile(path, []byte(sb.String()), 0o644); err != nil {
+	return len(s.results)
+}
+
+func (s *ResultStore) CountSuccess() int {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	n := 0
+	for _, r := range s.results {
+		if r.success {
+			n++
+		}
+	}
+	return n
+}
+
+func (s *ResultStore) CountFailed() int {
+	return s.Count() - s.CountSuccess()
+}
+
+func (s *ResultStore) WriteToFile(path string) error {
+	file, err := os.Create(path)
+	if err != nil {
 		return errors.NewFileIOError(err.Error())
+	}
+	defer file.Close()
+
+	for _, r := range s.GetResults() {
+		_, err := fmt.Fprintf(file, "task=%d success=%t completedAt=%s message=%s\n",
+			r.taskID, r.success, r.completedAt.Format(time.RFC3339), r.message)
+		if err != nil {
+			return errors.NewFileIOError(err.Error())
+		}
 	}
 	return nil
 }

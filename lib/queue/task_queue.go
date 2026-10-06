@@ -51,6 +51,26 @@ func (q *TaskQueue) Dequeue() (task.Task, error) {
 	return t, nil
 }
 
+// TryDequeue returns immediately; ok is false when no task is available.
+func (q *TaskQueue) TryDequeue() (t task.Task, ok bool) {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+
+	if len(q.tasks) == 0 {
+		return nil, false
+	}
+	t = q.tasks[0]
+	q.tasks = q.tasks[1:]
+	return t, true
+}
+
+func (q *TaskQueue) Size() int {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+
+	return len(q.tasks)
+}
+
 func (q *TaskQueue) IsEmpty() bool {
 	q.lock.Lock()
 	defer q.lock.Unlock()
