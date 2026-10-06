@@ -1,5 +1,72 @@
 # multi_thread_data_go
 
+## Getting started (no Go installed)
+
+### 1. Requirements
+- **Go**, the version in the `go` line of `go.mod` or newer.
+- **Git** (optional; you can download the project as a ZIP instead).
+
+The project only uses Go's standard library, so there is nothing else to install.
+
+### 2. Install Go
+
+Download the installer for your system from <https://go.dev/dl/> and follow it, or use a package manager:
+
+| System | Command |
+|---|---|
+| macOS (Homebrew) | `brew install go` |
+| Windows (winget) | `winget install GoLang.Go` |
+| Ubuntu / Debian | `sudo apt install golang-go` (may be an older version than `go.mod` requires; if so use the installer from go.dev) |
+| Linux (manual) | extract the `.tar.gz` to `/usr/local` and add `export PATH=$PATH:/usr/local/go/bin` to your shell profile |
+
+Open a **new terminal** and check it works:
+
+```
+go version
+```
+
+### 3. Get the code
+
+```
+git clone <repository-url>
+cd multi_thread_data_go
+```
+
+(or download the ZIP, extract it and open a terminal in that folder).
+
+### 4. Run it
+
+From the project root, the folder that contains `go.mod`:
+
+```
+go run ./cmd/ridesharing
+```
+
+The CSV files are embedded in the program, so no paths or extra files are needed.
+
+### 5. What you should see
+
+- Console: `loaded ... drivers`, `loaded ... riders / ride requests`, a stream of worker/task log lines, and a final line like
+  `done in 8.1s: 500 total, 500 successful, 0 failed (results in results.txt)`.
+- New files in the project folder: `results.txt` (one line per task) and `ridesharing.log` (the same log lines).
+
+### 6. Optional checks
+
+```
+go vet ./...                          # static checks
+go run -race ./cmd/ridesharing        # detects data races (slower)
+go build -o ridesharing ./cmd/ridesharing && ./ridesharing   # build a binary (ridesharing.exe on Windows)
+```
+
+### 7. Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `go: command not found` | Go is not on your `PATH`; reinstall or add it, then open a new terminal |
+| `go.mod requires go >= X` | Your Go is too old; install a newer version from go.dev |
+| `directory not found` / `no required module` | Run the command from the folder that contains `go.mod` |
+| `pattern Drivers.csv: no matching files found` | `Drivers.csv` and `Riders.csv` must be inside `lib/simulation/` |
+
 ## Class Diagram
 
 ```markdown
@@ -22,6 +89,7 @@ classDiagram
         +writeResults(path)
         +stats() Stats
         +run(tasks, outPath)
+        +close()
     }
 
     class Stats {
@@ -63,13 +131,13 @@ classDiagram
 
     class Simulation {
         <<package>>
-        generator.go (to implement)
+        +loadDrivers()
+        +loadRides() Task[]
     }
 
     class TaskQueue {
-        -Queue~Task~ tasks
-        -Mutex lock
-        -Condition taskAvailable
+        -chan Task tasks
+        -RWMutex lock
         -bool closed
         +enqueue(task)
         +dequeue() Task
@@ -239,3 +307,39 @@ classDiagram
     ResultStore ..> FileIOException : handles
     Logger ..> ProcessingException : logs
 ```
+
+## Implementation (Go)
+
+### Run
+
+See [Getting started](#getting-started-no-go-installed); the command is `go run ./cmd/ridesharing`.
+
+Outputs: console summary, `results.txt` (one line per task) and `ridesharing.log` (worker/task start, completion and errors).
+
+### Data
+
+`lib/simulation/Drivers.csv` and `lib/simulation/Riders.csv` are embedded in the binary (`go:embed`).
+Each row of `Riders.csv` is a rider **and** its ride request: the pickup is the rider's own
+`latitude/longitude/address`, the destination comes from the `destination_*` columns.
+Coordinates are worldwide, so distances and fares are large; this is only demo data.
+
+### Flow
+
+1. `simulation.LoadDrivers()` registers every driver; `simulation.LoadRides()` registers every rider and returns one `RideRequest` per rider.
+2. `system.Initialize(workers)` creates the queue, result store, logger and workers.
+3. `Run` starts the workers (goroutines), enqueues all tasks, closes the queue and waits for the workers to finish.
+4. Each worker dequeues a task, processes it (simulated 50-200 ms delay, reserves a free driver, computes the fare with the haversine distance), stores the `Result` and logs it.
+5. Results are written to `results.txt`.
+
+### Concurrency design
+
+| Requirement | Where |
+|---|---|
+| Shared queue | `lib/queue/task_queue.go`: buffered channel; each task goes to exactly one worker |
+| Worker threads | `lib/worker/worker.go`: one goroutine per worker, started with a `sync.WaitGroup` |
+| Simulated work | `lib/task/ride_request.go`: `Process()` sleeps a random 50-200 ms |
+| No races on shared data | `sync.Mutex` in `ResultStore`, `Logger`, the driver registry and the location list; `sync.RWMutex` on the queue's closed flag; `atomic.Bool` for the worker running flag |
+| No deadlock / safe termination | queue is closed after submitting; `Dequeue` returns a `QueueError` once it is closed and drained, so every worker exits and `WaitGroup.Wait()` returns |
+| No lost or duplicated tasks | a channel delivers each task once; a worker that panics still stores a failed result |
+| Error handling | `lib/errors`: `ProcessingError`, `QueueError`, `FileIOError`; functions return errors, `defer` closes files and recovers panics |
+| Logging | `lib/logger/logger.go`: worker start/complete, task start/complete/error, exceptions; to console and `ridesharing.log` |

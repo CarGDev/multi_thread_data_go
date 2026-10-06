@@ -1,4 +1,4 @@
-// Package simulation will generate sample drivers, riders and ride requests.
+// Package simulation loads the sample drivers, riders and ride requests from embedded CSV files.
 package simulation
 
 import (
@@ -8,37 +8,20 @@ import (
 	"strconv"
 
 	"ridesharing/lib/driver"
+	"ridesharing/lib/location"
 	"ridesharing/lib/rider"
+	"ridesharing/lib/task"
 )
 
 //go:embed Drivers.csv Riders.csv
 var fileContent embed.FS
 
-type DriverInformation struct {
-	ID        int     `json:"id"`
-	Name      string  `json:"name"`
-	Latitude  float64 `json:"latitude"`
-	Longitude float64 `json:"longitude"`
-	Address   string  `json:"address"`
-}
-
-type RiderInformation struct {
-	ID                   int     `json:"id"`
-	Name                 string  `json:"name"`
-	Latitude             float64 `json:"latitude"`
-	Longitude            float64 `json:"longitude"`
-	Address              string  `json:"address"`
-	DestinationLatitude  float64 `json:"dest_lat"`
-	DestinationLongitude float64 `json:"dest_lon"`
-	DestinationAddress   string  `json:"dest_address"`
-}
-
+// readRows returns the data rows of an embedded CSV, with the header removed.
 func readRows(name string, columns int) ([][]string, error) {
 	file, err := fileContent.Open(name)
 	if err != nil {
 		return nil, err
 	}
-
 	defer file.Close()
 
 	rows, err := csv.NewReader(file).ReadAll()
@@ -66,6 +49,7 @@ func parseFloat(name string, line int, field, value string) (float64, error) {
 	return f, nil
 }
 
+// LoadDrivers registers every driver found in Drivers.csv.
 func LoadDrivers() error {
 	const name = "Drivers.csv"
 	rows, err := readRows(name, 5)
@@ -75,7 +59,6 @@ func LoadDrivers() error {
 
 	for i, row := range rows {
 		line := i + 2
-		id, err := strconv.Atoi(row[0])
 		if err != nil {
 			return fmt.Errorf("%s line %d: bad id %q", name, line, row[0])
 		}
@@ -87,60 +70,55 @@ func LoadDrivers() error {
 		if err != nil {
 			return err
 		}
-		info := DriverInformation{ID: id, Name: row[1], Latitude: lat, Longitude: lon, Address: row[4]}
 
-		driver.NewDriver(info.ID, info.Name, info.Latitude, info.Longitude, info.Address)
-
+		driver.NewDriver(i, row[1], lat, lon, row[4])
 	}
 
+	fmt.Printf("loaded %d drivers\n", len(rows))
 	return nil
 }
 
-func LoadRides() error {
+// LoadRides registers every rider found in Riders.csv and returns one ride
+// request per rider: the pickup is the rider's own location and the
+// destination comes from the destination_* columns.
+func LoadRides() ([]task.Task, error) {
 	const name = "Riders.csv"
 
 	rows, err := readRows(name, 8)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
+	tasks := make([]task.Task, 0, len(rows))
 	for i, row := range rows {
 		line := i + 2
 
-		id, err := strconv.Atoi(row[0])
 		if err != nil {
-			return fmt.Errorf("%s line %d: bad id %q", name, line, row[0])
+			return nil, fmt.Errorf("%s line %d: bad id %q", name, line, row[0])
 		}
 		lat, err := parseFloat(name, line, "latitude", row[2])
 		if err != nil {
-			return err
+			return nil, err
 		}
 		lon, err := parseFloat(name, line, "longitude", row[3])
 		if err != nil {
-			return err
+			return nil, err
 		}
 		destLat, err := parseFloat(name, line, "destination_lat", row[5])
 		if err != nil {
-			return err
+			return nil, err
 		}
 		destLon, err := parseFloat(name, line, "destination_lon", row[6])
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		info := RiderInformation{
-			ID:                   id,
-			Name:                 row[1],
-			Latitude:             lat,
-			Longitude:            lon,
-			Address:              row[4],
-			DestinationLatitude:  destLat,
-			DestinationLongitude: destLon,
-			DestinationAddress:   row[7],
-		}
+		r := rider.NewRider(i, row[1], lat, lon, row[4])
+		destination := location.NewLocation(destLat, destLon, row[7])
 
-		rider.NewRider(info.ID, info.Name, info.Latitude, info.Longitude, info.Address)
+		tasks = append(tasks, task.NewRideRequest(i, r, r.GetLocation(), destination))
 	}
 
-	return nil
+	fmt.Printf("loaded %d riders / ride requests\n", len(tasks))
+	return tasks, nil
 }

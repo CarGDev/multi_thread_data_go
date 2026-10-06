@@ -15,8 +15,8 @@ const (
 	baseFare     = 2.5
 	farePerKm    = 1.2
 	noDriverText = "no driver available"
-	minWorkMs    = 100
-	maxWorkMs    = 500
+	minWorkMs    = 50
+	maxWorkMs    = 200
 )
 
 type RideRequest struct {

@@ -20,11 +20,22 @@ type RideSharingSystem struct {
 	running     bool
 }
 
+const (
+	queueCapacity = 100
+	logFilePath   = "ridesharing.log"
+)
+
 func Initialize(workerCount int) *RideSharingSystem {
+	log, err := logger.NewFileLogger(logFilePath)
+	if err != nil {
+		log = logger.NewLogger()
+		log.Warn("file logging disabled: " + err.Error())
+	}
+
 	s := &RideSharingSystem{
-		taskQueue:   queue.NewTaskQueue(),
+		taskQueue:   queue.NewTaskQueue(queueCapacity),
 		resultStore: result.NewResultStore(),
-		logger:      logger.NewLogger(),
+		logger:      log,
 	}
 	for i := 1; i <= workerCount; i++ {
 		s.workers = append(s.workers, worker.NewWorker(i, s.taskQueue, s.resultStore, s.logger))
@@ -92,6 +103,11 @@ func (s *RideSharingSystem) StartWorkers() {
 func (s *RideSharingSystem) Shutdown() {
 	s.taskQueue.Close()
 	s.running = false
+}
+
+// Close releases the log file; call it after AwaitCompletion.
+func (s *RideSharingSystem) Close() error {
+	return s.logger.Close()
 }
 
 func (s *RideSharingSystem) AwaitCompletion() {
