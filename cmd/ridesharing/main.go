@@ -11,7 +11,7 @@ import (
 
 const (
 	workerCount = 8
-	resultsFile = "results.txt"
+	resultsFile = "results.csv"
 )
 
 func main() {

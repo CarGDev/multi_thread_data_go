@@ -47,8 +47,8 @@ The CSV files are embedded in the program, so no paths or extra files are needed
 ### 5. What you should see
 
 - Console: `loaded ... drivers`, `loaded ... riders / ride requests`, a stream of worker/task log lines, and a final line like
-  `done in 8.1s: 500 total, 500 successful, 0 failed (results in results.txt)`.
-- New files in the project folder: `results.txt` (one line per task) and `ridesharing.log` (the same log lines).
+  `done in 8.1s: 500 total, 500 successful, 0 failed (results in results.csv)`.
+- New files in the project folder: `results.csv` (one row per task, see columns below) and `ridesharing.log` (the same log lines).
 
 ### 6. Optional checks
 
@@ -124,6 +124,7 @@ classDiagram
         +process() Result
         +findDriver() Driver
         +calculateFare() double
+        +tripDistanceKm() double
         +getRider() Rider
         +getPickup() Location
         +getDestination() Location
@@ -171,6 +172,26 @@ classDiagram
         +isSuccess() bool
         +getMessage() string
         +getCompletedAt() DateTime
+        +setWorker(workerId)
+        +getWorkerId() int
+        +setStartedAt(time)
+        +getDuration() Duration
+        +setRide(info)
+        +getRide() RideInfo
+    }
+
+    class RideInfo {
+        +int riderId
+        +string riderName
+        +Location pickup
+        +Location destination
+        +int driverId
+        +string driverName
+        +Location driverStart
+        +Location driverEnd
+        +double driverToPickupKm
+        +double tripDistanceKm
+        +double fare
     }
 
     class ResultStore {
@@ -181,7 +202,7 @@ classDiagram
         +count() int
         +countSuccess() int
         +countFailed() int
-        +writeToFile(path)
+        +writeToCSV(path)
     }
 
     class Logger {
@@ -215,10 +236,12 @@ classDiagram
         -string name
         -Location currentLocation
         -DriverStatus status
-        +acquireAvailable() Driver
+        +acquireNearest(pickup) Driver
         +getAll() Driver[]
+        +getAllAvailable() Driver[]
         +acceptRide() bool
         +completeRide()
+        +completeRideAt(destination)
         +goOffline() bool
         +goOnline()
         +getID() int
@@ -314,7 +337,7 @@ classDiagram
 
 See [Getting started](#getting-started-no-go-installed); the command is `go run ./cmd/ridesharing`.
 
-Outputs: console summary, `results.txt` (one line per task) and `ridesharing.log` (worker/task start, completion and errors).
+Outputs: console summary, `results.csv` (one row per task) and `ridesharing.log` (worker/task start, completion and errors).
 
 ### Data
 
@@ -329,7 +352,7 @@ Coordinates are worldwide, so distances and fares are large; this is only demo d
 2. `system.Initialize(workers)` creates the queue, result store, logger and workers.
 3. `Run` starts the workers (goroutines), enqueues all tasks, closes the queue and waits for the workers to finish.
 4. Each worker dequeues a task, processes it (simulated 50-200 ms delay, reserves a free driver, computes the fare with the haversine distance), stores the `Result` and logs it.
-5. Results are written to `results.txt`.
+5. Results are written to `results.csv`.
 
 ### Concurrency design
 
@@ -343,3 +366,20 @@ Coordinates are worldwide, so distances and fares are large; this is only demo d
 | No lost or duplicated tasks | a channel delivers each task once; a worker that panics still stores a failed result |
 | Error handling | `lib/errors`: `ProcessingError`, `QueueError`, `FileIOError`; functions return errors, `defer` closes files and recovers panics |
 | Logging | `lib/logger/logger.go`: worker start/complete, task start/complete/error, exceptions; to console and `ridesharing.log` |
+
+### `results.csv` columns
+
+| Column | Meaning |
+|---|---|
+| `task_id`, `worker_id` | the task and the worker (goroutine) that processed it |
+| `rider_id`, `rider_name` | the rider; `rider_id` is the `id` in `Riders.csv` |
+| `pickup_lat/lon/address` | the rider's initial location (pickup) |
+| `dest_lat/lon/address` | the ride destination |
+| `driver_id`, `driver_name` | the assigned driver; `driver_id` is the `id` in `Drivers.csv` (empty if none was available) |
+| `driver_start_lat/lon/address` | where the driver was when assigned |
+| `driver_end_lat/lon/address` | where the driver ended the ride (the destination) |
+| `driver_to_pickup_km`, `trip_distance_km`, `fare` | straight-line distances (haversine) and the fare |
+| `success`, `message` | outcome and a short description |
+| `started_at`, `completed_at`, `duration_ms` | timing of the task |
+
+Rows are in completion order, so they also show how the workers interleave. A driver that never appears in `driver_id` was never picked.

@@ -44,32 +44,64 @@ func NewRideRequest(
 func (rr *RideRequest) Process() *result.Result {
 	rr.SetStatus(Processing)
 
-	// Simulate the computational work of matching and routing.
-	time.Sleep(time.Duration(minWorkMs+rand.Intn(maxWorkMs-minWorkMs)) * time.Millisecond)
-
 	d := rr.FindDriver()
 	if d == nil {
 		rr.SetStatus(Failed)
-		return result.NewResult(rr.taskID, false, noDriverText)
+
+		res := result.NewResult(rr.taskID, false, noDriverText)
+		res.SetRide(result.RideInfo{
+			RiderID:     rr.rider.GetID(),
+			RiderName:   rr.rider.GetName(),
+			Pickup:      rr.pickup,
+			Destination: rr.destination,
+		})
+		return res
 	}
-	defer d.CompleteRide()
+	// The driver ends the ride at the rider's destination.
+	defer d.CompleteRideAt(rr.destination)
+
+	// Where the driver was when assigned, before the ride moves them.
+	driverStart := d.GetLocation()
+
+	// Simulate the ride; the driver stays busy meanwhile.
+	time.Sleep(time.Duration(minWorkMs+rand.Intn(maxWorkMs-minWorkMs)) * time.Millisecond)
 
 	fare := rr.CalculateFare()
 	rr.SetStatus(Completed)
 
-	return result.NewResult(rr.taskID, true, fmt.Sprintf(
+	res := result.NewResult(rr.taskID, true, fmt.Sprintf(
 		"rider %s assigned to driver %s, fare %.2f",
 		rr.rider.GetName(), d.GetName(), fare,
 	))
+	res.SetRide(result.RideInfo{
+		RiderID:          rr.rider.GetID(),
+		RiderName:        rr.rider.GetName(),
+		Pickup:           rr.pickup,
+		Destination:      rr.destination,
+		DriverID:         d.GetID(),
+		DriverName:       d.GetName(),
+		DriverStart:      driverStart,
+		DriverEnd:        rr.destination,
+		DriverToPickupKm: driverStart.DistanceTo(rr.pickup),
+		TripDistanceKm:   rr.TripDistanceKm(),
+		Fare:             fare,
+	})
+	return res
 }
 
-// FindDriver reserves an available driver; the caller must call CompleteRide on it.
+// FindDriver reserves the available driver nearest to the pickup; the caller
+// must free it with CompleteRide or CompleteRideAt.
 func (rr *RideRequest) FindDriver() *driver.Driver {
-	return driver.AcquireAvailable()
+	return driver.AcquireNearest(rr.pickup)
+}
+
+// TripDistanceKm is the straight-line distance from pickup to destination.
+func (rr *RideRequest) TripDistanceKm() float64 {
+	return rr.pickup.DistanceTo(rr.destination)
 }
 
 func (rr *RideRequest) CalculateFare() float64 {
-	return baseFare + farePerKm*rr.pickup.DistanceTo(rr.destination)
+	return baseFare + farePerKm*rr.TripDistanceKm()
 }
 
 func (rr *RideRequest) GetRider() *rider.Rider {

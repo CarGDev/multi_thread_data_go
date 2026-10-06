@@ -2,6 +2,7 @@
 package driver
 
 import (
+	"math"
 	"sync"
 
 	"ridesharing/lib/location"
@@ -14,9 +15,12 @@ type Driver struct {
 	status          DriverStatus
 }
 
+// drivers is the full registry; availableDrivers holds only the drivers that
+// can take a ride right now, keyed by driver ID. Both are guarded by driversMu.
 var (
-	drivers   []*Driver
-	driversMu sync.Mutex
+	drivers          []*Driver
+	availableDrivers = map[int]*Driver{}
+	driversMu        sync.Mutex
 )
 
 func NewDriver(
@@ -27,7 +31,7 @@ func NewDriver(
 	address string,
 ) *Driver {
 	loc := location.NewLocation(latitude, longitude, address)
-	driver := Driver{
+	d := &Driver{
 		driverID:        driverID,
 		name:            name,
 		currentLocation: loc.LocationID,
@@ -35,10 +39,11 @@ func NewDriver(
 	}
 
 	driversMu.Lock()
-	drivers = append(drivers, &driver)
+	drivers = append(drivers, d)
+	availableDrivers[d.driverID] = d
 	driversMu.Unlock()
 
-	return &driver
+	return d
 }
 
 // GetAll returns a copy of the driver registry.
@@ -47,6 +52,18 @@ func GetAll() []*Driver {
 	defer driversMu.Unlock()
 
 	return append([]*Driver(nil), drivers...)
+}
+
+// GetAllAvailable returns a copy of the drivers that can take a ride now.
+func GetAllAvailable() []*Driver {
+	driversMu.Lock()
+	defer driversMu.Unlock()
+
+	values := make([]*Driver, 0, len(availableDrivers))
+	for _, d := range availableDrivers {
+		values = append(values, d)
+	}
+	return values
 }
 
 func (d *Driver) UpdateLocation(
@@ -61,14 +78,32 @@ func (d *Driver) UpdateLocation(
 	d.currentLocation = loc.LocationID
 }
 
-// AcquireAvailable atomically reserves the first available driver, or returns nil.
-func AcquireAvailable() *Driver {
-	for _, d := range GetAll() {
-		if d.AcceptRide() {
-			return d
+// AcquireNearest atomically reserves the available driver closest to pickup,
+// or returns nil when none is available. The scan, the status change and the
+// removal from the available set happen under one lock, so two workers can
+// never get the same driver.
+func AcquireNearest(pickup *location.Location) *Driver {
+	driversMu.Lock()
+	defer driversMu.Unlock()
+
+	var nearest *Driver
+	best := math.MaxFloat64
+	for _, d := range availableDrivers {
+		loc := location.GetLocation(d.currentLocation)
+		if loc == nil {
+			continue
+		}
+		if dist := loc.DistanceTo(pickup); dist < best {
+			best, nearest = dist, d
 		}
 	}
-	return nil
+	if nearest == nil {
+		return nil
+	}
+
+	nearest.status = Busy
+	delete(availableDrivers, nearest.driverID)
+	return nearest
 }
 
 func (d *Driver) AcceptRide() bool {
@@ -78,10 +113,11 @@ func (d *Driver) AcceptRide() bool {
 		return false
 	}
 	d.status = Busy
+	delete(availableDrivers, d.driverID)
 	return true
-
 }
 
+// CompleteRide frees the driver where they currently are.
 func (d *Driver) CompleteRide() {
 	driversMu.Lock()
 	defer driversMu.Unlock()
@@ -89,6 +125,19 @@ func (d *Driver) CompleteRide() {
 		return
 	}
 	d.status = Available
+	availableDrivers[d.driverID] = d
+}
+
+// CompleteRideAt frees the driver and leaves them at the ride's destination.
+func (d *Driver) CompleteRideAt(destination *location.Location) {
+	driversMu.Lock()
+	defer driversMu.Unlock()
+	if d.status != Busy {
+		return
+	}
+	d.currentLocation = destination.LocationID
+	d.status = Available
+	availableDrivers[d.driverID] = d
 }
 
 // GoOffline makes an available driver unavailable; a busy driver is left alone.
@@ -99,6 +148,7 @@ func (d *Driver) GoOffline() bool {
 		return false
 	}
 	d.status = Offline
+	delete(availableDrivers, d.driverID)
 	return true
 }
 
@@ -107,6 +157,7 @@ func (d *Driver) GoOnline() {
 	defer driversMu.Unlock()
 	if d.status == Offline {
 		d.status = Available
+		availableDrivers[d.driverID] = d
 	}
 }
 

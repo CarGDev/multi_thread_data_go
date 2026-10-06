@@ -119,7 +119,7 @@ func (s *RideSharingSystem) GetResults() []*result.Result {
 }
 
 func (s *RideSharingSystem) WriteResults(path string) error {
-	err := s.resultStore.WriteToFile(path)
+	err := s.resultStore.WriteToCSV(path)
 	if err != nil {
 		s.logger.Error(err.Error())
 	}

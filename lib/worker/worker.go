@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"ridesharing/lib/errors"
 	"ridesharing/lib/logger"
@@ -60,16 +61,23 @@ func (w *Worker) Run() {
 
 func (w *Worker) ProcessTask(t task.Task) {
 	w.logger.LogTaskStart(w.workerID, t.GetID())
+	startedAt := time.Now()
 
 	defer func() {
 		if r := recover(); r != nil {
 			err := errors.NewProcessingError(t.GetID(), fmt.Sprint(r))
 			w.logger.LogException(w.workerID, err)
-			w.resultStore.AddResult(result.NewResult(t.GetID(), false, err.GetMessage()))
+
+			res := result.NewResult(t.GetID(), false, err.GetMessage())
+			res.SetWorker(w.workerID)
+			res.SetStartedAt(startedAt)
+			w.resultStore.AddResult(res)
 		}
 	}()
 
 	res := t.Process()
+	res.SetWorker(w.workerID)
+	res.SetStartedAt(startedAt)
 	w.resultStore.AddResult(res)
 
 	if res.IsSuccess() {

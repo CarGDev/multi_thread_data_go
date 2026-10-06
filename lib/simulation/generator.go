@@ -59,6 +59,7 @@ func LoadDrivers() error {
 
 	for i, row := range rows {
 		line := i + 2
+		id, err := strconv.Atoi(row[0])
 		if err != nil {
 			return fmt.Errorf("%s line %d: bad id %q", name, line, row[0])
 		}
@@ -71,7 +72,7 @@ func LoadDrivers() error {
 			return err
 		}
 
-		driver.NewDriver(i, row[1], lat, lon, row[4])
+		driver.NewDriver(id, row[1], lat, lon, row[4])
 	}
 
 	fmt.Printf("loaded %d drivers\n", len(rows))
@@ -93,6 +94,7 @@ func LoadRides() ([]task.Task, error) {
 	for i, row := range rows {
 		line := i + 2
 
+		id, err := strconv.Atoi(row[0])
 		if err != nil {
 			return nil, fmt.Errorf("%s line %d: bad id %q", name, line, row[0])
 		}
@@ -113,10 +115,10 @@ func LoadRides() ([]task.Task, error) {
 			return nil, err
 		}
 
-		r := rider.NewRider(i, row[1], lat, lon, row[4])
+		r := rider.NewRider(id, row[1], lat, lon, row[4])
 		destination := location.NewLocation(destLat, destLon, row[7])
 
-		tasks = append(tasks, task.NewRideRequest(i, r, r.GetLocation(), destination))
+		tasks = append(tasks, task.NewRideRequest(id, r, r.GetLocation(), destination))
 	}
 
 	fmt.Printf("loaded %d riders / ride requests\n", len(tasks))
