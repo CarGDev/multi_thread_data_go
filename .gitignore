@@ -30,8 +30,11 @@ go.work.sum
 
 # bin
 bin
-Drivers.bak
 
 # Editor/IDE
 # .idea/
 # .vscode/
+
+*.csv
+*.txt
+*.log
