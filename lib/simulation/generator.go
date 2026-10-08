@@ -59,7 +59,7 @@ func LoadDrivers() error {
 
 	for i, row := range rows {
 		line := i + 2
-		id, err := strconv.Atoi(row[0])
+		id := i + 1
 		if err != nil {
 			return fmt.Errorf("%s line %d: bad id %q", name, line, row[0])
 		}
@@ -94,7 +94,7 @@ func LoadRides() ([]task.Task, error) {
 	for i, row := range rows {
 		line := i + 2
 
-		id, err := strconv.Atoi(row[0])
+		id := i + 1
 		if err != nil {
 			return nil, fmt.Errorf("%s line %d: bad id %q", name, line, row[0])
 		}
